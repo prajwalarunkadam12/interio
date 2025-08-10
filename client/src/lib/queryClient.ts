@@ -17,6 +17,12 @@ export async function apiRequest<T = any>(
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
   
+  console.log('Making API request:', {
+    method: options.method || 'GET',
+    url,
+    body: options.body ? JSON.parse(options.body as string) : undefined
+  });
+  
   const defaultHeaders: HeadersInit = {
     'Content-Type': 'application/json',
   };
@@ -29,14 +35,28 @@ export async function apiRequest<T = any>(
     },
   };
 
-  const response = await fetch(url, config);
+  try {
+    const response = await fetch(url, config);
+    
+    console.log('API response status:', response.status, response.statusText);
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      console.error('API request failed:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorData
+      });
+      throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log('API request successful:', result);
+    return result;
+  } catch (error) {
+    console.error('API request error:', error);
+    throw error;
   }
-
-  return await response.json();
 }
 
 export const fetcher = async <T = any>(url: string): Promise<T> => {

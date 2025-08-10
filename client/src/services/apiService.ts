@@ -66,10 +66,32 @@ export const productService = {
   },
 
   async createProduct(product: InsertProduct) {
-    return apiRequest<{ product: Product }>('/products', {
+    console.log('Creating product via API:', product);
+    const result = await apiRequest<{ product: Product }>('/products', {
       method: 'POST',
       body: JSON.stringify(product),
     });
+    console.log('Product creation API response:', result);
+    return result;
+  },
+
+  async updateProduct(id: string, updates: Partial<InsertProduct>) {
+    console.log('Updating product via API:', id, updates);
+    const result = await apiRequest<{ product: Product }>(`/products/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+    console.log('Product update API response:', result);
+    return result;
+  },
+
+  async deleteProduct(id: string) {
+    console.log('Deleting product via API:', id);
+    const result = await apiRequest<{ success: boolean }>(`/products/${id}`, {
+      method: 'DELETE',
+    });
+    console.log('Product deletion API response:', result);
+    return result;
   },
 };
 

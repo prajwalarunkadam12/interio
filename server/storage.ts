@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, ilike, or } from "drizzle-orm";
 import {
   users,
   products,
@@ -57,6 +57,7 @@ export interface IStorage {
   getProduct(id: string): Promise<Product | undefined>;
   createProduct(product: InsertProduct): Promise<Product>;
   updateProduct(id: string, updates: Partial<InsertProduct>): Promise<Product | undefined>;
+  deleteProduct(id: string): Promise<boolean>;
   
   // Category management
   getCategories(): Promise<Category[]>;
@@ -127,32 +128,48 @@ export class DatabaseStorage implements IStorage {
     limit?: number;
     offset?: number;
   }): Promise<Product[]> {
-    // Build the query with proper typing
-    const conditions = [];
+    const conditions: any[] = [];
+    
     if (filters?.category) {
       conditions.push(eq(products.category, filters.category));
     }
     if (filters?.featured !== undefined) {
       conditions.push(eq(products.featured, filters.featured));
     }
+    if (filters?.search) {
+      conditions.push(
+        or(
+          ilike(products.name, `%${filters.search}%`),
+          ilike(products.description, `%${filters.search}%`),
+          ilike(products.category, `%${filters.search}%`)
+        )
+      );
+    }
     
     let query = db.select().from(products);
     
     if (conditions.length > 0) {
-      query = query.where(conditions.length === 1 ? conditions[0] : and(...conditions)) as any;
+      query = query.where(conditions.length === 1 ? conditions[0] : and(...conditions));
     }
     
-    query = query.orderBy(desc(products.createdAt)) as any;
+    query = query.orderBy(desc(products.createdAt));
     
     if (filters?.limit) {
-      query = query.limit(filters.limit) as any;
+      query = query.limit(filters.limit);
     }
     
     if (filters?.offset) {
-      query = query.offset(filters.offset) as any;
+      query = query.offset(filters.offset);
     }
     
-    return await query;
+    try {
+      const result = await query;
+      console.log(`Retrieved ${result.length} products with filters:`, filters);
+      return result;
+    } catch (error) {
+      console.error('Error fetching products:', error);
+      throw new Error('Failed to fetch products from database');
+    }
   }
 
   async getProduct(id: string): Promise<Product | undefined> {
@@ -166,7 +183,66 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateProduct(id: string, updates: Partial<InsertProduct>): Promise<Product | undefined> {
-    const result = await db.update(products).set(updates).where(eq(products.id, id)).returning();
+    try {
+      const result = await db.update(products).set({
+        ...updates,
+        updatedAt: new Date()
+      }).where(eq(products.id, id)).returning();
+      
+      if (result.length > 0) {
+        console.log('Product updated successfully:', result[0]);
+      }
+      
+      return result[0];
+    } catch (error) {
+      console.error('Error updating product:', error);
+      throw error;
+    }
+  }
+
+  async deleteProduct(id: string): Promise<boolean> {
+    try {
+      const result = await db.delete(products).where(eq(products.id, id)).returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      throw error;
+    }
+  }
+
+  async createProduct(product: InsertProduct): Promise<Product> {
+    try {
+      console.log('Creating product with data:', product);
+      
+      // Ensure required fields are present
+      if (!product.name || !product.price || !product.category) {
+        throw new Error('Missing required fields: name, price, and category');
+      }
+      
+      // Set default values for optional fields
+      const productWithDefaults = {
+        ...product,
+        images: product.images || [],
+        stock: product.stock || 0,
+        rating: product.rating || "0",
+        reviewCount: product.reviewCount || 0,
+        featured: product.featured || false,
+        tags: product.tags || [],
+      };
+      
+      const result = await db.insert(products).values(productWithDefaults).returning();
+      
+      if (result.length === 0) {
+        throw new Error('Failed to create product - no result returned');
+      }
+      
+      console.log('Product created successfully:', result[0]);
+      return result[0];
+    } catch (error) {
+      console.error('Error creating product:', error);
+      throw error;
+    }
+  }
     return result[0];
   }
 

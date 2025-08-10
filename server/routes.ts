@@ -84,6 +84,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Products routes
   app.get("/api/products", async (req, res) => {
     try {
+      console.log('GET /api/products - Query params:', req.query);
+      
       const filters = {
         category: req.query.category as string | undefined,
         featured: req.query.featured ? req.query.featured === 'true' : undefined,
@@ -92,35 +94,120 @@ export async function registerRoutes(app: Express): Promise<Server> {
         offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
       };
       
+      console.log('Applying filters:', filters);
       const products = await storage.getProducts(filters);
+      console.log(`Found ${products.length} products`);
       res.json({ products });
     } catch (error) {
+      console.error('Error in GET /api/products:', error);
       res.status(500).json({ error: error instanceof Error ? error.message : "Failed to get products" });
     }
   });
 
   app.get("/api/products/:id", async (req, res) => {
     try {
+      console.log('GET /api/products/:id - Product ID:', req.params.id);
       const product = await storage.getProduct(req.params.id);
       if (!product) {
+        console.log('Product not found:', req.params.id);
         return res.status(404).json({ error: "Product not found" });
       }
+      console.log('Found product:', product.name);
       res.json({ product });
     } catch (error) {
+      console.error('Error in GET /api/products/:id:', error);
       res.status(500).json({ error: error instanceof Error ? error.message : "Failed to get product" });
     }
   });
 
   app.post("/api/products", async (req, res) => {
     try {
+      console.log('POST /api/products - Request body:', req.body);
+      
+      // Validate required fields
+      if (!req.body.name || !req.body.price || !req.body.category) {
+        return res.status(400).json({ 
+          error: "Missing required fields: name, price, and category are required" 
+        });
+      }
+      
       const productData = insertProductSchema.parse(req.body);
+      console.log('Validated product data:', productData);
+      
       const product = await storage.createProduct(productData);
+      console.log('Created product successfully:', product);
+      
       res.status(201).json({ product });
     } catch (error) {
+      console.error('Error in POST /api/products:', error);
+      
+      if (error instanceof Error && error.message.includes('duplicate key')) {
+        return res.status(409).json({ error: "Product with this name already exists" });
+      }
+      
       res.status(400).json({ error: error instanceof Error ? error.message : "Invalid product data" });
     }
   });
 
+  app.put("/api/products/:id", async (req, res) => {
+    try {
+      console.log('PUT /api/products/:id - Product ID:', req.params.id, 'Updates:', req.body);
+      
+      const updates = req.body;
+      const product = await storage.updateProduct(req.params.id, updates);
+      
+      if (!product) {
+        console.log('Product not found for update:', req.params.id);
+        return res.status(404).json({ error: "Product not found" });
+      }
+      
+      console.log('Updated product successfully:', product);
+      res.json({ product });
+    } catch (error) {
+      console.error('Error in PUT /api/products/:id:', error);
+      res.status(400).json({ error: error instanceof Error ? error.message : "Failed to update product" });
+    }
+  });
+
+  app.delete("/api/products/:id", async (req, res) => {
+    try {
+      console.log('DELETE /api/products/:id - Product ID:', req.params.id);
+      
+      const success = await storage.deleteProduct(req.params.id);
+      
+      if (!success) {
+        console.log('Product not found for deletion:', req.params.id);
+        return res.status(404).json({ error: "Product not found" });
+      }
+      
+      console.log('Deleted product successfully:', req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error in DELETE /api/products/:id:', error);
+      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to delete product" });
+    }
+  });
+
+  // Health check endpoint
+  app.get("/api/health", async (req, res) => {
+    try {
+      // Test database connection
+      const testQuery = await db.select().from(products).limit(1);
+      res.json({ 
+        status: "healthy", 
+        database: "connected",
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Health check failed:', error);
+      res.status(503).json({ 
+        status: "unhealthy", 
+        database: "disconnected",
+        error: error instanceof Error ? error.message : "Database connection failed",
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
   // Categories routes
   app.get("/api/categories", async (req, res) => {
     try {
